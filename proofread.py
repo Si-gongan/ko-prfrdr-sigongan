@@ -63,7 +63,7 @@ def _debug(k, v=None):
         #input()
 
 
-def main(infile, rulefile, specified_rule=None, show_all_lines=False, debug=False, profile=False, show_progress=False):
+def main(infile, rulefile, specified_rule=None, show_all_lines=False, debug=False, profile=False, show_progress=False, type="file"):
 
     # needs to be here to avoid waisting time when '--help' option is used
     import_KoNLPy()
@@ -83,13 +83,16 @@ def main(infile, rulefile, specified_rule=None, show_all_lines=False, debug=Fals
     _rules = loadrules(rulefile)
     
     if infile:
-        filetoread = fc.convert(infile)
-        try:
-            text = read_manuscript(filetoread)
-        except PermissionError:
-            sys.exit(f"Failed!!! Please close {filetoread} and retry...")
+        if type == "file":
+            filetoread = fc.convert(infile)
+            try:
+                text = read_manuscript(filetoread)
+            except PermissionError:
+                sys.exit(f"Failed!!! Please close {filetoread} and retry...")
 
-        paragraphs = text.splitlines(True)
+            paragraphs = text.splitlines(True)
+        else:
+            paragraphs = infile.split("\n")
     else:
         paragraphs = sys.stdin
 
@@ -100,10 +103,13 @@ def main(infile, rulefile, specified_rule=None, show_all_lines=False, debug=Fals
             lines += re.split(r'(?<=[.?]) ', paragraph)
 
     warnings_counter = Counter()
+    results = []
     try:
         for line in progress(lines):
             corrections, warnings_counter = check(_rules, line, specified_rule, show_all_lines, warnings_counter)
-            display_corrections(line, corrections, show_all_lines)
+            result = display_corrections(line, corrections, show_all_lines)
+            if result:
+                results.extend(result)
         display_summary(warnings_counter)
     except BrokenPipeError:  # when user hits 'q' during using pipe
         pass  
@@ -112,6 +118,8 @@ def main(infile, rulefile, specified_rule=None, show_all_lines=False, debug=Fals
         print("***Profile***")
         for x in profiler.keys():
             print(x.split('_')[0], profiler[x])
+
+    return results
 
 def loadrules(rulefile):
     allrules = []
@@ -473,7 +481,9 @@ def display_corrections(line, corrections, show_all_lines):
     if line.strip() in ['true cases:', 'false cases:']:
         if not show_all_lines:
             print(line.strip())
+        return
     elif corrections:
+        result = []
         bullet = ''  # '*'
         space = ''  # ' '
         offset = len(bullet) + len(space)
@@ -482,8 +492,11 @@ def display_corrections(line, corrections, show_all_lines):
         for cor in corrections:
             loc, kind, name, bad, good, desc = cor
             cl = carret_loc(line, loc)
-            print(' ' * offset + ' ' * cl + '^')
-            message(kind, name, bad, good, desc)
+            check = ' ' * offset + ' ' * cl + '^'
+            print(check)
+            msg = message(kind, name, bad, good, desc)
+            result.append({'line' : line, 'check' : check, 'msg' : msg})
+        return result
 
 
 def carret_loc(s, loc):
@@ -503,8 +516,10 @@ def message(kind, name, bad, good, desc):
     arr = '\n   →  ' if len(bad) > 20 else ' →  '
     guide = arr.join(filter(None, [bad, good]))
     ref = " : ".join(filter(None, [name, desc]))
-    print(f'   => {guide}\t ({ref})\n')
+    msg = f'   => {guide}\t ({ref})\n'
+    print(msg)
     sys.stdout.flush()
+    return msg
 
 
 def display_summary(warnings_counter):
